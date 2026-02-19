@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vital Tracker Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #F8FAFC;
+            color: #1E293B;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .tab-active {
+            background-color: #0F172A;
+            color: white;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .tab-active-fridge { background-color: #10B981; color: white; }
+        .tab-active-coach { background-color: #F59E0B; color: white; }
+        .tab-active-meta { background-color: #6366F1; color: white; }
+
+        .card-shadow {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.02), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
+        }
+        
+        .loader {
+            border-top-color: #10B981;
+            animation: spinner 1.5s linear infinite;
+        }
+
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.8s ease-in-out;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .animate-in {
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="pb-32">
+
+    <div id="app" class="max-w-lg mx-auto min-h-screen">
+        
+        <!-- Header -->
+        <header class="px-6 pt-12 pb-6 flex justify-between items-end">
+            <div>
+                <p id="top-label" class="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Vital Tracker Pro</p>
+                <h1 class="text-4xl font-black tracking-tight text-slate-800">Mi <span id="header-title" class="text-slate-400">Día</span></h1>
+            </div>
+            <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+                <i data-lucide="calendar" id="calendar-icon" class="text-slate-400 w-5 h-5"></i>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main id="main-content" class="px-6 space-y-6">
+            <!-- Inyectado por JS -->
+        </main>
+
+        <!-- Navigation Bar -->
+        <nav class="fixed bottom-8 left-4 right-4 z-50">
+            <div class="mx-auto max-w-sm bg-white/80 backdrop-blur-2xl border border-white/20 shadow-2xl rounded-[2.5rem] p-2 flex justify-between items-center">
+                <button onclick="switchTab('dashboard')" id="nav-dashboard" class="flex-1 flex flex-col items-center py-3 rounded-[2rem] transition-all text-slate-400">
+                    <i data-lucide="layout-grid" class="w-5 h-5"></i>
+                    <span class="text-[9px] font-black mt-1 uppercase">Hoy</span>
+                </button>
+                <button onclick="switchTab('fridge')" id="nav-fridge" class="flex-1 flex flex-col items-center py-3 rounded-[2rem] transition-all text-slate-400">
+                    <i data-lucide="refrigerator" class="w-5 h-5"></i>
+                    <span class="text-[9px] font-black mt-1 uppercase">Nevera</span>
+                </button>
+                <button onclick="switchTab('coach')" id="nav-coach" class="flex-1 flex flex-col items-center py-3 rounded-[2rem] transition-all text-slate-400">
+                    <i data-lucide="zap" class="w-5 h-5"></i>
+                    <span class="text-[9px] font-black mt-1 uppercase">Coach</span>
+                </button>
+                <button onclick="switchTab('meta')" id="nav-meta" class="flex-1 flex flex-col items-center py-3 rounded-[2rem] transition-all text-slate-400">
+                    <i data-lucide="target" class="w-5 h-5"></i>
+                    <span class="text-[9px] font-black mt-1 uppercase">Metas</span>
+                </button>
+            </div>
+        </nav>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Configuración de Firebase ---
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'vital-tracker-v7-final';
+        const apiKey = ""; 
+
+        let state = {
+            user: null,
+            activeTab: 'dashboard',
+            stats: {
+                weight: 160,
+                height: 170,
+                age: 25,
+                gender: 'masculino',
+                targetLbs: 5,
+                targetWeeks: 4,
+                water: 0,
+                calories: 0,
+                burnedCalories: 0,
+                calorieLogs: [],
+                exerciseLogs: []
+            },
+            fridgeItems: ["Huevos", "Pollo", "Arroz", "Tomate", "Aguacate", "Leche", "Espinacas"],
+            selectedItems: [],
+            coachAdvice: null,
+            exerciseImages: {},
+            mealSuggestion: null,
+            mealImage: null,
+            loading: { recipe: false, coach: false }
+        };
+
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        // --- Lógica Metabólica Centralizada ---
+        const getAnalysis = () => {
+            const { weight, height, age, gender, targetLbs, targetWeeks, calories, burnedCalories, water } = state.stats;
+            const weightNum = Number(weight) || 160;
+            const weightKg = weightNum / 2.20462;
+            
+            // Peso Ideal Lorentz
+            let idealWeightKg = (Number(height) - 100) - ((Number(height) - 150) / (gender === 'masculino' ? 4 : 2.5));
+            if (idealWeightKg < 40) idealWeightKg = (Number(height) / 100) ** 2 * 22;
+            const idealWeightLbs = Math.round(idealWeightKg * 2.20462);
+
+            // Plan Meta Paulatino (1lb = 3500 kcal)
+            const weeksSafe = Math.max(1, Number(targetWeeks));
+            const dailyDeficitGoal = Math.round((Number(targetLbs) * 3500) / (weeksSafe * 7));
+            
+            // Tasa Metabólica
+            let bmr = (10 * weightKg) + (6.25 * Number(height)) - (5 * Number(age));
+            bmr = gender === 'masculino' ? bmr + 5 : bmr - 161;
+            const maintenance = Math.round(bmr * 1.2);
+            
+            // Objetivos Dinámicos (40% ejercicio / 60% comida)
+            const suggestedExerciseGoal = Math.max(150, Math.round(dailyDeficitGoal * 0.4));
+            const consumptionGoal = maintenance - (dailyDeficitGoal - suggestedExerciseGoal);
+
+            return {
+                bmr: Math.round(bmr),
+                maintenance,
+                goal: consumptionGoal,
+                idealWeightLbs,
+                dailyDeficitGoal,
+                suggestedExerciseGoal,
+                lbsPerWeek: (Number(targetLbs) / weeksSafe).toFixed(1),
+                lbsToLose: Math.max(0, weightNum - idealWeightLbs),
+                remainingCals: Math.max(0, consumptionGoal - (Number(calories) || 0)),
+                waterPercent: Math.min(100, ((Number(water) || 0) / 10) * 100),
+                burnPercent: Math.min(100, ((Number(burnedCalories) || 0) / suggestedExerciseGoal) * 100),
+                eatPercent: Math.min(100, ((Number(calories) || 0) / consumptionGoal) * 100),
+                weightPercent: weightNum > idealWeightLbs ? Math.max(0, Math.round(100 - ((weightNum - idealWeightLbs) / weightNum * 100))) : 100,
+                status: (Number(calories) || 0) > maintenance ? 'exceso' : ((Number(calories) || 0) > consumptionGoal ? 'mantenimiento' : 'óptimo')
+            };
+        };
+
+        // --- Funciones de Persistencia ---
+        const saveStats = async (updates) => {
+            if (!state.user) return;
+            const ref = doc(db, 'artifacts', appId, 'users', state.user.uid, 'daily_stats', todayStr);
+            await setDoc(ref, updates, { merge: true });
+        };
+
+        const saveProfile = async (updates) => {
+            if (!state.user) return;
+            const ref = doc(db, 'artifacts', appId, 'users', state.user.uid, 'settings', 'profile');
+            await setDoc(ref, updates, { merge: true });
+        };
+
+        // --- Funciones Globales de la App ---
+        window.switchTab = (tab) => {
+            state.activeTab = tab;
+            const labels = { dashboard: 'Día', fridge: 'Nevera', coach: 'Plan', meta: 'Metas' };
+            const tags = { dashboard: 'Vital Tracker Pro', fridge: 'Chef Virtual IA', coach: 'Entrenador Personal', meta: 'Dashboard Analítico' };
+            document.getElementById('header-title').innerText = labels[tab];
+            document.getElementById('top-label').innerText = tags[tab];
+            render();
+        };
+
+        window.updateField = (field, val) => {
+            const numericFields = ['age', 'height', 'targetLbs', 'targetWeeks', 'weight'];
+            const value = numericFields.includes(field) ? parseInt(val) || 0 : val;
+            saveProfile({ [field]: value });
+            if (field === 'weight') saveStats({ weight: value });
+        };
+
+        window.addWater = (amt) => saveStats({ water: Math.max(0, (Number(state.stats.water) || 0) + amt) });
+
+        window.registerManualFood = async () => {
+            const nameInput = document.getElementById('food-name');
+            const kcalInput = document.getElementById('food-kcal');
+            const name = nameInput.value;
+            const kcal = parseInt(kcalInput.value);
+            if (!name || isNaN(kcal)) return;
+
+            const newLog = { 
+                time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), 
+                amount: kcal, 
+                label: name, 
+                type: 'manual' 
+            };
+            
+            const currentLogs = Array.isArray(state.stats.calorieLogs) ? state.stats.calorieLogs : [];
+            const updatedLogs = [newLog, ...currentLogs];
+            const currentTotal = Number(state.stats.calories) || 0;
+            
+            await saveStats({ calories: currentTotal + kcal, calorieLogs: updatedLogs });
+            nameInput.value = '';
+            kcalInput.value = '';
+        };
+
+        // REGISTRO DE NEVERA: Sincronizado con el historial de hoy
+        window.registerMeal = async (kcal, label) => {
+            if (!state.user) return;
+            const consumedKcal = Number(kcal);
+            const newLog = { 
+                time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), 
+                amount: consumedKcal, 
+                label: label, 
+                type: 'fridge' 
+            };
+            
+            const currentLogs = Array.isArray(state.stats.calorieLogs) ? state.stats.calorieLogs : [];
+            const updatedLogs = [newLog, ...currentLogs];
+            const currentTotal = Number(state.stats.calories) || 0;
+            
+            // Se guarda en el historial de 'Hoy' (daily_stats del usuario para hoyStr)
+            await saveStats({ 
+                calories: currentTotal + consumedKcal, 
+                calorieLogs: updatedLogs 
+            });
+            
+            state.mealSuggestion = null;
+            state.mealImage = null;
+            window.switchTab('dashboard'); // Redirige al Dashboard para ver el impacto
+        };
+
+        window.registerManualExercise = async () => {
+            const nameInput = document.getElementById('ex-name');
+            const kcalInput = document.getElementById('ex-kcal');
+            const name = nameInput.value;
+            const kcal = parseInt(kcalInput.value);
+            if (!name || isNaN(kcal)) return;
+
+            const newLog = { 
+                time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), 
+                amount: kcal, 
+                label: name 
+            };
+            
+            const currentLogs = Array.isArray(state.stats.exerciseLogs) ? state.stats.exerciseLogs : [];
+            const updatedLogs = [newLog, ...currentLogs];
+            const currentBurned = Number(state.stats.burnedCalories) || 0;
+            
+            await saveStats({ burnedCalories: currentBurned + kcal, exerciseLogs: updatedLogs });
+            nameInput.value = '';
+            kcalInput.value = '';
+        };
+
+        window.registerCoachExercise = async (kcal, label) => {
+            const burnAmount = Number(kcal);
+            const newLog = { 
+                time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), 
+                amount: burnAmount, 
+                label: label 
+            };
+            const currentLogs = Array.isArray(state.stats.exerciseLogs) ? state.stats.exerciseLogs : [];
+            const updatedLogs = [newLog, ...currentLogs];
+            const currentBurned = Number(state.stats.burnedCalories) || 0;
+            
+            await saveStats({ burnedCalories: currentBurned + burnAmount, exerciseLogs: updatedLogs });
+            window.switchTab('dashboard');
+        };
+
+        window.toggleIngredient = (item) => {
+            state.selectedItems = state.selectedItems.includes(item) ? state.selectedItems.filter(i => i !== item) : [...state.selectedItems, item];
+            render();
+        };
+
+        // --- Inteligencia Artificial ---
+        const callAI = async (prompt, model = 'gemini') => {
+            const url = model === 'gemini' 
+                ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`
+                : `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+            const body = model === 'gemini' 
+                ? { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }
+                : { instances: [{ prompt }], parameters: { sampleCount: 1 } };
+            const res = await fetch(url, { method: 'POST', body: JSON.stringify(body) });
+            const data = await res.json();
+            return model === 'gemini' ? JSON.parse(data.candidates[0].content.parts[0].text) : (data.predictions?.[0]?.bytesBase64Encoded ? `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}` : null);
+        };
+
+        window.generateRecipe = async (type) => {
+            if (state.selectedItems.length === 0) return;
+            state.loading.recipe = true; render();
+            try {
+                const recipe = await callAI(`Receta saludable ${type} con: ${state.selectedItems.join(", ")}. Paso a paso detallado. JSON: {nombre, calorias, pasos[], beneficio, visual_prompt}`);
+                state.mealSuggestion = recipe;
+                state.mealImage = await callAI(`Professional food photography of ${recipe.visual_prompt}, gourmet style`, 'imagen');
+            } finally { state.loading.recipe = false; render(); }
+        };
+
+        window.generateRoutine = async () => {
+            state.loading.coach = true; render();
+            try {
+                const meta = getAnalysis();
+                const advice = await callAI(`Personal Trainer. Perfil: ${state.stats.gender}, ${state.stats.age} años. Lesión RODILLA (Cero impacto). Tiempo: 10-30 min. Quemar hoy: ${meta.suggestedExerciseGoal} kcal. JSON: {resumen_meta, ejercicios: [{nombre, tiempo, calorias, explicacion, visual_prompt}]}`);
+                state.coachAdvice = advice;
+                for (let i = 0; i < advice.ejercicios.length; i++) {
+                    state.exerciseImages[i] = await callAI(advice.ejercicios[i].visual_prompt, 'imagen');
+                    render();
+                }
+            } finally { state.loading.coach = false; render(); }
+        };
+
+        // --- Gráficas de Meta ---
+        const renderRing = (percent, color, icon, label, current, total, unit) => {
+            const radius = 35;
+            const circ = 2 * Math.PI * radius;
+            const offset = circ - (percent / 100) * circ;
+            return `
+                <div class="bg-white p-6 rounded-[2.5rem] card-shadow border border-slate-50 flex flex-col items-center">
+                    <div class="relative w-24 h-24 mb-4">
+                        <svg class="w-full h-full" viewBox="0 0 100 100">
+                            <circle class="text-slate-100 stroke-current" stroke-width="8" fill="transparent" r="${radius}" cx="50" cy="50" />
+                            <circle class="progress-ring__circle" style="stroke: ${color}; stroke-dasharray: ${circ}; stroke-dashoffset: ${offset};" stroke-width="8" stroke-linecap="round" fill="transparent" r="${radius}" cx="50" cy="50" />
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center text-slate-400"><i data-lucide="${icon}" class="w-6 h-6" style="color: ${color}"></i></div>
+                    </div>
+                    <p class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 text-center">${label}</p>
+                    <p class="text-sm font-black text-slate-800">${current} <span class="text-[10px] text-slate-300">/ ${total} ${unit}</span></p>
+                </div>
+            `;
+        };
+
+        // --- Renderizado Principal ---
+        const render = () => {
+            const main = document.getElementById('main-content');
+            const meta = getAnalysis();
+            
+            // Actualizar botones Nav
+            const navButtons = ['nav-dashboard', 'nav-fridge', 'nav-coach', 'nav-meta'];
+            navButtons.forEach(id => document.getElementById(id).classList.remove('tab-active', 'tab-active-fridge', 'tab-active-coach', 'tab-active-meta'));
+            const activeId = `nav-${state.activeTab}`;
+            const activeClass = state.activeTab === 'dashboard' ? 'tab-active' : `tab-active-${state.activeTab}`;
+            document.getElementById(activeId).classList.add(activeClass);
+
+            if (state.activeTab === 'dashboard') {
+                main.innerHTML = `
+                    <div class="animate-in space-y-6">
+                        <!-- Plan Meta Paulatino -->
+                        <div class="bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100">
+                            <div class="flex items-center gap-3 mb-6">
+                                <div class="p-3 rounded-2xl bg-indigo-500 text-white shadow-lg"><i data-lucide="target"></i></div>
+                                <div><h3 class="text-lg font-bold text-slate-800 leading-tight">Plan Meta Paulatino</h3><p class="text-xs text-slate-400">Meta Ideal: ${meta.idealWeightLbs} lbs</p></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4 mb-6">
+                                <div class="bg-slate-50 p-4 rounded-3xl">
+                                    <label class="text-[9px] font-black text-slate-400 uppercase">Lbs a perder</label>
+                                    <input type="number" onchange="updateField('targetLbs', this.value)" value="${state.stats.targetLbs}" class="bg-transparent w-full font-bold outline-none text-slate-800" />
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-3xl">
+                                    <label class="text-[9px] font-black text-slate-400 uppercase">Tiempo (sem)</label>
+                                    <input type="number" onchange="updateField('targetWeeks', this.value)" value="${state.stats.targetWeeks}" class="bg-transparent w-full font-bold outline-none text-slate-800" />
+                                </div>
+                            </div>
+                            <div class="bg-indigo-50 p-4 rounded-3xl flex justify-between items-center">
+                                <div><p class="text-[10px] font-black text-indigo-500 uppercase">Ritmo</p><p class="text-lg font-black text-indigo-700">${meta.lbsPerWeek} lbs/sem</p></div>
+                                <div class="text-right"><p class="text-[10px] font-black text-indigo-500 uppercase">Déficit Diario</p><p class="text-lg font-black text-indigo-700">-${meta.dailyDeficitGoal} kcal</p></div>
+                            </div>
+                        </div>
+
+                        <!-- Análisis Nutricional -->
+                        <div class="bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100">
+                            <div class="flex items-center gap-3 mb-6">
+                                <div class="p-3 rounded-2xl bg-violet-500 text-white shadow-lg"><i data-lucide="activity"></i></div>
+                                <div><h3 class="text-lg font-bold text-slate-800">Análisis Nutricional</h3><p class="text-xs text-slate-400 text-emerald-500 font-bold">Estado actual</p></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4 text-center mb-6">
+                                <div class="bg-violet-50 p-4 rounded-3xl"><p class="text-[9px] font-black uppercase text-violet-500 mb-1">Mantenimiento</p><p class="text-xl font-black text-slate-700">${meta.maintenance}</p></div>
+                                <div class="bg-emerald-50 p-4 rounded-3xl"><p class="text-[9px] font-black uppercase text-emerald-500 mb-1">Meta Ingesta</p><p class="text-xl font-black text-emerald-600">${meta.goal}</p></div>
+                            </div>
+                            <div class="p-5 bg-slate-50 rounded-3xl">
+                                <div class="flex justify-between items-end mb-3">
+                                    <h4 class="text-2xl font-black text-slate-700">${meta.remainingCals} <span class="text-xs font-bold text-slate-300 italic">kcal libres</span></h4>
+                                    <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase ${meta.status === 'exceso' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}">${meta.status}</span>
+                                </div>
+                                <div class="w-full bg-slate-200 h-3 rounded-full overflow-hidden">
+                                    <div class="h-full transition-all duration-700 ${meta.status === 'exceso' ? 'bg-red-500' : 'bg-violet-500'}" style="width: ${meta.eatPercent}%"></div>
+                                </div>
+                            </div>
+                            <div class="mt-8 space-y-2">
+                                <p class="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Historial Hoy</p>
+                                <div class="space-y-2 max-h-40 overflow-y-auto pr-1 no-scrollbar">
+                                    ${(state.stats.calorieLogs || []).map(log => `
+                                        <div class="flex items-center justify-between p-3 bg-white border border-slate-50 rounded-2xl shadow-sm">
+                                            <div class="flex items-center gap-3">
+                                                <div class="p-2 rounded-xl ${log.type === 'fridge' ? 'bg-emerald-100 text-emerald-500' : 'bg-orange-100 text-orange-500'}">
+                                                    <i data-lucide="${log.type === 'fridge' ? 'refrigerator' : 'book-open'}" class="w-3 h-3"></i>
+                                                </div>
+                                                <div><p class="text-xs font-bold truncate max-w-[120px] text-slate-700">${log.label}</p><p class="text-[9px] text-slate-400 font-medium">${log.time}</p></div>
+                                            </div>
+                                            <p class="text-sm font-black text-slate-800">+${log.amount}</p>
+                                        </div>
+                                    `).join('') || '<p class="text-center text-[10px] text-slate-300 py-4 italic">No hay registros hoy</p>'}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quema de Calorías -->
+                        <div class="bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100">
+                            <div class="flex items-center gap-3 mb-6">
+                                <div class="p-3 rounded-2xl bg-red-500 text-white shadow-lg"><i data-lucide="dumbbell"></i></div>
+                                <div><h3 class="text-lg font-bold text-slate-800 leading-tight">Quema de Calorías</h3><p class="text-xs text-slate-400 font-medium">Meta Hoy: ${meta.suggestedExerciseGoal} kcal</p></div>
+                            </div>
+                            <div class="flex justify-between items-end mb-4">
+                                <div><p class="text-3xl font-black text-red-600">${state.stats.burnedCalories || 0} <span class="text-sm text-slate-400 font-bold">kcal</span></p><p class="text-[9px] text-slate-400 uppercase font-black tracking-wider">Quemadas Hoy</p></div>
+                                <div class="text-right text-slate-400"><p class="text-lg font-bold">${meta.suggestedExerciseGoal}</p><p class="text-[9px] uppercase font-black">Objetivo Diario</p></div>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-6">
+                                <div class="bg-red-500 h-full transition-all" style="width: ${meta.burnPercent}%"></div>
+                            </div>
+                            <div class="space-y-3">
+                                <p class="text-[9px] font-black uppercase text-slate-400 tracking-widest px-1">Actividad Manual</p>
+                                <input id="ex-name" type="text" placeholder="¿Qué ejercicio?" class="w-full bg-slate-50 rounded-2xl px-4 py-3 outline-none text-sm font-medium border border-transparent focus:border-red-100 transition-all text-slate-800" />
+                                <div class="flex gap-2">
+                                    <input id="ex-kcal" type="number" placeholder="kcal" class="flex-1 bg-slate-50 rounded-2xl px-4 py-3 outline-none text-sm font-medium text-slate-800" />
+                                    <button onclick="registerManualExercise()" class="bg-red-500 text-white px-6 rounded-2xl font-bold active:scale-95 transition-all shadow-md shadow-red-100">OK</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Hidratación -->
+                        <div class="bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100 text-center">
+                            <div class="flex items-center gap-3 mb-6 text-left">
+                                <div class="p-3 rounded-2xl bg-blue-500 text-white shadow-lg"><i data-lucide="droplet"></i></div>
+                                <h3 class="text-lg font-bold text-slate-800">Hidratación</h3>
+                            </div>
+                            <div class="flex items-center justify-around py-4">
+                                <button onclick="addWater(-1)" class="w-14 h-14 flex items-center justify-center bg-slate-50 rounded-2xl active:scale-90 transition-transform"><i data-lucide="minus"></i></button>
+                                <div class="text-center"><span class="text-6xl font-black block text-blue-500">${state.stats.water}</span><span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">VASOS</span></div>
+                                <button onclick="addWater(1)" class="w-14 h-14 flex items-center justify-center bg-blue-500 text-white rounded-2xl shadow-lg active:scale-90 transition-transform"><i data-lucide="plus"></i></button>
+                            </div>
+                        </div>
+
+                        <!-- Peso Permanente -->
+                        <div class="bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100 flex items-center gap-4">
+                            <div class="p-3 rounded-2xl bg-purple-500 text-white shadow-lg"><i data-lucide="scale"></i></div>
+                            <input id="weight-input" type="number" value="${state.stats.weight}" onchange="updateField('weight', this.value)" class="bg-transparent text-4xl font-black w-24 outline-none text-slate-700" />
+                            <span class="text-xl font-bold text-slate-300">lbs</span>
+                        </div>
+
+                        <!-- Registro Manual Comida -->
+                        <div class="bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100">
+                            <div class="flex items-center gap-3 mb-6">
+                                <div class="p-3 rounded-2xl bg-orange-500 text-white shadow-lg"><i data-lucide="plus"></i></div>
+                                <div><h3 class="text-lg font-bold text-slate-800">Comida Manual</h3><p class="text-xs text-slate-400 font-medium">Registro directo</p></div>
+                            </div>
+                            <div class="space-y-3">
+                                <input id="food-name" type="text" placeholder="¿Qué comiste?" class="w-full bg-slate-50 rounded-2xl px-4 py-3 outline-none text-sm font-medium border border-transparent focus:border-orange-100 text-slate-800" />
+                                <div class="flex gap-2">
+                                    <input id="food-kcal" type="number" placeholder="kcal" class="flex-1 bg-slate-50 rounded-2xl px-4 py-3 outline-none text-sm font-medium text-slate-800" />
+                                    <button onclick="registerManualFood()" class="bg-orange-500 text-white px-6 rounded-2xl font-bold active:scale-95 transition-all shadow-md shadow-orange-100">Añadir</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (state.activeTab === 'meta') {
+                main.innerHTML = `
+                    <div class="animate-in grid grid-cols-2 gap-4">
+                        ${renderRing(meta.waterPercent, '#3B82F6', 'droplet', 'Agua Hoy', state.stats.water || 0, 10, 'v')}
+                        ${renderRing(meta.burnPercent, '#EF4444', 'zap', 'Quema Hoy', state.stats.burnedCalories || 0, meta.suggestedExerciseGoal, 'kcal')}
+                        ${renderRing(meta.eatPercent, '#10B981', 'flame', 'Consumo Hoy', state.stats.calories || 0, meta.goal, 'kcal')}
+                        ${renderRing(meta.weightPercent, '#6366F1', 'scale', 'Progreso Peso', Math.round(state.stats.weight || 0), meta.idealWeightLbs, 'lbs')}
+                    </div>
+
+                    <div class="bg-white rounded-[2.5rem] p-8 card-shadow border border-slate-100 mt-4">
+                        <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2"><i data-lucide="info" class="w-5 h-5 text-indigo-500"></i> Resumen de Meta</h3>
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center p-4 bg-slate-50 rounded-3xl">
+                                <p class="text-xs font-bold text-slate-500 uppercase tracking-tight">Déficit Diario Meta</p>
+                                <p class="text-xl font-black text-indigo-600">${meta.dailyDeficitGoal} kcal</p>
+                            </div>
+                            <div class="flex justify-between items-center p-4 bg-slate-50 rounded-3xl">
+                                <p class="text-xs font-bold text-slate-500 uppercase tracking-tight">Libras por bajar</p>
+                                <p class="text-xl font-black text-amber-600">${meta.lbsToLose} lbs</p>
+                            </div>
+                            <div class="flex justify-between items-center p-4 bg-slate-50 rounded-3xl">
+                                <p class="text-xs font-bold text-slate-500 uppercase tracking-tight">Peso Final Ideal</p>
+                                <p class="text-xl font-black text-emerald-600">${meta.idealWeightLbs} lbs</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (state.activeTab === 'fridge') {
+                main.innerHTML = `
+                    <div class="animate-in bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div class="p-3 rounded-2xl bg-emerald-500 text-white shadow-lg"><i data-lucide="refrigerator"></i></div>
+                            <h3 class="text-lg font-bold text-slate-800 leading-tight">Mi Nevera</h3>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+                            ${state.fridgeItems.map(item => `
+                                <div onclick="toggleIngredient('${item}')" class="relative p-4 rounded-[2rem] border-2 transition-all cursor-pointer ${state.selectedItems.includes(item) ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white border-slate-100 text-slate-400'}">
+                                    <span class="text-xs font-bold text-center">${item}</span>
+                                    ${state.selectedItems.includes(item) ? '<div class="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-1"><i data-lucide="check" class="w-3 h-3"></i></div>' : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="grid grid-cols-3 gap-3 border-t border-slate-50 pt-6">
+                            ${['Desayuno', 'Almuerzo', 'Cena'].map(t => `<button onclick="generateRecipe('${t.toLowerCase()}')" ${state.loading.recipe ? 'disabled' : ''} class="bg-slate-900 text-white py-4 rounded-3xl font-black text-[10px] uppercase active:scale-95 disabled:opacity-50 transition-all">${t}</button>`).join('')}
+                        </div>
+                        ${state.loading.recipe ? '<div class="mt-8 flex flex-col items-center py-10"><div class="loader w-10 h-10 rounded-full border-4 border-slate-100 mb-4"></div><p class="text-xs font-bold text-slate-400 text-center">IA diseñando receta...</p></div>' : ''}
+                        ${state.mealSuggestion ? `
+                            <div class="mt-8 rounded-[3rem] overflow-hidden bg-white border border-slate-50 shadow-2xl animate-in zoom-in-95">
+                                <div class="aspect-square bg-slate-50 relative">
+                                    ${state.mealImage ? `<img src="${state.mealImage}" class="w-full h-full object-cover" />` : '<div class="h-full flex items-center justify-center text-slate-200"><i data-lucide="camera" class="w-10 h-10 animate-pulse"></i></div>'}
+                                    <div class="absolute bottom-4 left-4 right-4 bg-black/60 backdrop-blur-md p-4 rounded-2xl text-white">
+                                        <h4 class="text-base font-black leading-tight">${state.mealSuggestion.nombre}</h4>
+                                        <p class="text-xs text-emerald-400 font-bold">${state.mealSuggestion.calorias} kcal estimado</p>
+                                    </div>
+                                </div>
+                                <div class="p-6">
+                                    <div class="space-y-4 mb-8">
+                                        ${state.mealSuggestion.pasos.map((p, i) => `<div class="flex gap-4"><span class="w-6 h-6 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-[10px] font-black">${i+1}</span><p class="text-xs font-medium text-slate-600 leading-relaxed">${p}</p></div>`).join('')}
+                                    </div>
+                                    <button onclick="registerMeal(${state.mealSuggestion.calorias}, '${state.mealSuggestion.nombre.replace(/'/g, "\\'")}')" class="w-full py-4 bg-emerald-500 text-white rounded-[2rem] font-black uppercase shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">Registrar en Historial</button>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            } else if (state.activeTab === 'coach') {
+                main.innerHTML = `
+                    <div class="animate-in bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100 mb-6">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div class="p-3 rounded-2xl bg-amber-500 text-white shadow-lg"><i data-lucide="user"></i></div>
+                            <h3 class="font-bold">Perfil Personal</h3>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div class="bg-slate-50 p-4 rounded-3xl"><label class="text-[9px] font-black text-slate-400 uppercase">Género</label><select onchange="updateField('gender', this.value)" class="w-full bg-transparent font-bold outline-none text-sm text-slate-800"><option value="masculino" ${state.stats.gender === 'masculino' ? 'selected' : ''}>Masculino</option><option value="femenino" ${state.stats.gender === 'femenino' ? 'selected' : ''}>Femenino</option></select></div>
+                            <div class="bg-slate-50 p-4 rounded-3xl"><label class="text-[9px] font-black text-slate-400 uppercase">Edad</label><input type="number" onchange="updateField('age', this.value)" value="${state.stats.age}" class="w-full bg-transparent font-bold outline-none text-sm text-slate-800" /></div>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-3xl"><label class="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1"><i data-lucide="ruler" class="w-3 h-3"></i> Altura (cm)</label><input type="number" onchange="updateField('height', this.value)" value="${state.stats.height}" class="w-full bg-transparent font-bold outline-none text-lg text-slate-800" /></div>
+                    </div>
+
+                    <div class="bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100">
+                        <button onclick="generateRoutine()" ${state.loading.coach ? 'disabled' : ''} class="w-full py-5 bg-slate-900 text-white rounded-[2.5rem] font-black uppercase flex items-center justify-center gap-2 active:scale-95 shadow-2xl transition-all">
+                            ${state.loading.coach ? '<div class="loader w-5 h-5 border-2 rounded-full border-slate-700"></div>' : '<i data-lucide="zap"></i> Generar Rutina'}
+                        </button>
+                        ${state.coachAdvice ? `
+                            <div class="mt-8 space-y-6">
+                                ${state.coachAdvice.ejercicios.map((ex, i) => `
+                                    <div class="bg-white rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-sm transition-all animate-in">
+                                        <div class="aspect-video bg-slate-50 relative">
+                                            ${state.exerciseImages[i] ? `<img src="${state.exerciseImages[i]}" class="w-full h-full object-cover" />` : '<div class="h-full flex items-center justify-center text-slate-100 animate-pulse"><i data-lucide="dumbbell" class="w-10 h-10"></i></div>'}
+                                            <div class="absolute top-4 right-4 flex gap-2">
+                                                <span class="bg-amber-500 text-white text-[9px] font-black px-3 py-1 rounded-full shadow-lg">-${ex.calorias} kcal</span>
+                                                <span class="bg-slate-900 text-white text-[9px] font-black px-3 py-1 rounded-full shadow-lg">${ex.tiempo}</span>
+                                            </div>
+                                        </div>
+                                        <div class="p-6">
+                                            <div class="flex justify-between items-start mb-2">
+                                                <h4 class="font-black text-slate-800 text-lg">${ex.nombre}</h4>
+                                                <button onclick="registerCoachExercise(${ex.calorias}, '${ex.nombre.replace(/'/g, "\\'")}')" class="bg-emerald-500 text-white p-2 rounded-xl active:scale-90 transition-all shadow-md"><i data-lucide="plus" class="w-4 h-4"></i></button>
+                                            </div>
+                                            <p class="text-xs text-slate-500 leading-relaxed font-medium">${ex.explicacion}</p>
+                                            <div class="flex items-center gap-2 text-[10px] font-bold text-emerald-500 uppercase mt-4"><i data-lucide="check-circle-2" class="w-3 h-3"></i> Rodilla protegida</div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+            lucide.createIcons();
+        };
+
+        const init = async () => {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+            onAuthStateChanged(auth, async (user) => {
+                state.user = user;
+                if (user) {
+                    onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'daily_stats', todayStr), (snap) => {
+                        if (snap.exists()) { 
+                            const data = snap.data();
+                            state.stats = { 
+                                ...state.stats, 
+                                ...data,
+                                calorieLogs: Array.isArray(data.calorieLogs) ? data.calorieLogs : [],
+                                exerciseLogs: Array.isArray(data.exerciseLogs) ? data.exerciseLogs : []
+                            }; 
+                        } else {
+                            saveStats({ water: 0, calories: 0, burnedCalories: 0, calorieLogs: [], exerciseLogs: [], weight: state.stats.weight });
+                        }
+                        render();
+                    });
+
+                    onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), (snap) => {
+                        if (snap.exists()) { 
+                            state.stats = { ...state.stats, ...snap.data() }; 
+                            render(); 
+                        }
+                    });
+                }
+            });
+        };
+
+        window.onload = () => { init(); render(); };
+    </script>
+</body>
+</html>
