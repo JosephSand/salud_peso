@@ -77,7 +77,7 @@
 
         <!-- Main Content -->
         <main id="main-content" class="px-6 space-y-6">
-            <!-- Inyectado por JS -->
+            <!-- Inyectado dinámicamente por JavaScript -->
         </main>
 
         <!-- Navigation Bar -->
@@ -108,13 +108,22 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- Configuración de Firebase ---
-        const firebaseConfig = JSON.parse(__firebase_config);
+        // --- Configuración e Inicialización ---
+        // Al subir a GitHub, asegúrate de que __firebase_config esté disponible o reemplázalo por tu objeto de configuración real.
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "", // Tu API Key si usas fuera de Canvas
+            authDomain: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: ""
+        };
+
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'vital-tracker-v7-final';
-        const apiKey = ""; 
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'vital-tracker-v7-production';
+        const apiKey = ""; // La API de Gemini se proporciona en el entorno
 
         let state = {
             user: null,
@@ -163,7 +172,7 @@
             bmr = gender === 'masculino' ? bmr + 5 : bmr - 161;
             const maintenance = Math.round(bmr * 1.2);
             
-            // Objetivos Dinámicos (40% ejercicio / 60% comida)
+            // Objetivos Dinámicos (40% ejercicio / 60% comida aprox)
             const suggestedExerciseGoal = Math.max(150, Math.round(dailyDeficitGoal * 0.4));
             const consumptionGoal = maintenance - (dailyDeficitGoal - suggestedExerciseGoal);
 
@@ -181,11 +190,11 @@
                 burnPercent: Math.min(100, ((Number(burnedCalories) || 0) / suggestedExerciseGoal) * 100),
                 eatPercent: Math.min(100, ((Number(calories) || 0) / consumptionGoal) * 100),
                 weightPercent: weightNum > idealWeightLbs ? Math.max(0, Math.round(100 - ((weightNum - idealWeightLbs) / weightNum * 100))) : 100,
-                status: (Number(calories) || 0) > maintenance ? 'exceso' : ((Number(calories) || 0) > consumptionGoal ? 'mantenimiento' : 'óptimo')
+                status: (Number(calories) || 0) > maintenance ? 'exceso' : ((Number(calories) || 0) > consumptionGoal ? 'óptimo' : 'déficit')
             };
         };
 
-        // --- Funciones de Persistencia ---
+        // --- Persistencia en Firebase ---
         const saveStats = async (updates) => {
             if (!state.user) return;
             const ref = doc(db, 'artifacts', appId, 'users', state.user.uid, 'daily_stats', todayStr);
@@ -198,7 +207,7 @@
             await setDoc(ref, updates, { merge: true });
         };
 
-        // --- Funciones Globales de la App ---
+        // --- Funciones Globales del Interfaz ---
         window.switchTab = (tab) => {
             state.activeTab = tab;
             const labels = { dashboard: 'Día', fridge: 'Nevera', coach: 'Plan', meta: 'Metas' };
@@ -240,7 +249,7 @@
             kcalInput.value = '';
         };
 
-        // REGISTRO DE NEVERA: Sincronizado con el historial de hoy
+        // REGISTRO DE NEVERA: Sincronizado con el historial de hoy y análisis nutricional
         window.registerMeal = async (kcal, label) => {
             if (!state.user) return;
             const consumedKcal = Number(kcal);
@@ -255,7 +264,7 @@
             const updatedLogs = [newLog, ...currentLogs];
             const currentTotal = Number(state.stats.calories) || 0;
             
-            // Se guarda en el historial de 'Hoy' (daily_stats del usuario para hoyStr)
+            // Guardamos directamente en las estadísticas de hoy
             await saveStats({ 
                 calories: currentTotal + consumedKcal, 
                 calorieLogs: updatedLogs 
@@ -263,7 +272,7 @@
             
             state.mealSuggestion = null;
             state.mealImage = null;
-            window.switchTab('dashboard'); // Redirige al Dashboard para ver el impacto
+            window.switchTab('dashboard'); // Volver al inicio para ver los resultados
         };
 
         window.registerManualExercise = async () => {
@@ -297,9 +306,9 @@
             };
             const currentLogs = Array.isArray(state.stats.exerciseLogs) ? state.stats.exerciseLogs : [];
             const updatedLogs = [newLog, ...currentLogs];
-            const currentBurned = Number(state.stats.burnedCalories) || 0;
+            const currentTotal = Number(state.stats.burnedCalories) || 0;
             
-            await saveStats({ burnedCalories: currentBurned + burnAmount, exerciseLogs: updatedLogs });
+            await saveStats({ burnedCalories: currentTotal + burnAmount, exerciseLogs: updatedLogs });
             window.switchTab('dashboard');
         };
 
@@ -308,7 +317,7 @@
             render();
         };
 
-        // --- Inteligencia Artificial ---
+        // --- Integración con Inteligencia Artificial ---
         const callAI = async (prompt, model = 'gemini') => {
             const url = model === 'gemini' 
                 ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`
@@ -327,7 +336,7 @@
             try {
                 const recipe = await callAI(`Receta saludable ${type} con: ${state.selectedItems.join(", ")}. Paso a paso detallado. JSON: {nombre, calorias, pasos[], beneficio, visual_prompt}`);
                 state.mealSuggestion = recipe;
-                state.mealImage = await callAI(`Professional food photography of ${recipe.visual_prompt}, gourmet style`, 'imagen');
+                state.mealImage = await callAI(`Professional photography, ${recipe.visual_prompt}, gourmet`, 'imagen');
             } finally { state.loading.recipe = false; render(); }
         };
 
@@ -344,7 +353,7 @@
             } finally { state.loading.coach = false; render(); }
         };
 
-        // --- Gráficas de Meta ---
+        // --- Helper para Gráficas Circulares ---
         const renderRing = (percent, color, icon, label, current, total, unit) => {
             const radius = 35;
             const circ = 2 * Math.PI * radius;
@@ -364,14 +373,13 @@
             `;
         };
 
-        // --- Renderizado Principal ---
+        // --- Renderizado de Pantallas ---
         const render = () => {
             const main = document.getElementById('main-content');
             const meta = getAnalysis();
             
-            // Actualizar botones Nav
-            const navButtons = ['nav-dashboard', 'nav-fridge', 'nav-coach', 'nav-meta'];
-            navButtons.forEach(id => document.getElementById(id).classList.remove('tab-active', 'tab-active-fridge', 'tab-active-coach', 'tab-active-meta'));
+            const navIds = ['nav-dashboard', 'nav-fridge', 'nav-coach', 'nav-meta'];
+            navIds.forEach(id => document.getElementById(id).classList.remove('tab-active', 'tab-active-fridge', 'tab-active-coach', 'tab-active-meta'));
             const activeId = `nav-${state.activeTab}`;
             const activeClass = state.activeTab === 'dashboard' ? 'tab-active' : `tab-active-${state.activeTab}`;
             document.getElementById(activeId).classList.add(activeClass);
@@ -379,11 +387,11 @@
             if (state.activeTab === 'dashboard') {
                 main.innerHTML = `
                     <div class="animate-in space-y-6">
-                        <!-- Plan Meta Paulatino -->
+                        <!-- Plan Meta -->
                         <div class="bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100">
                             <div class="flex items-center gap-3 mb-6">
                                 <div class="p-3 rounded-2xl bg-indigo-500 text-white shadow-lg"><i data-lucide="target"></i></div>
-                                <div><h3 class="text-lg font-bold text-slate-800 leading-tight">Plan Meta Paulatino</h3><p class="text-xs text-slate-400">Meta Ideal: ${meta.idealWeightLbs} lbs</p></div>
+                                <div><h3 class="text-lg font-bold text-slate-800 leading-tight">Plan Meta Paulatino</h3><p class="text-xs text-slate-400">Peso Ideal: ${meta.idealWeightLbs} lbs</p></div>
                             </div>
                             <div class="grid grid-cols-2 gap-4 mb-6">
                                 <div class="bg-slate-50 p-4 rounded-3xl">
@@ -409,11 +417,11 @@
                             </div>
                             <div class="grid grid-cols-2 gap-4 text-center mb-6">
                                 <div class="bg-violet-50 p-4 rounded-3xl"><p class="text-[9px] font-black uppercase text-violet-500 mb-1">Mantenimiento</p><p class="text-xl font-black text-slate-700">${meta.maintenance}</p></div>
-                                <div class="bg-emerald-50 p-4 rounded-3xl"><p class="text-[9px] font-black uppercase text-emerald-500 mb-1">Meta Ingesta</p><p class="text-xl font-black text-emerald-600">${meta.goal}</p></div>
+                                <div class="bg-emerald-50 p-4 rounded-3xl"><p class="text-[9px] font-black uppercase text-emerald-500 mb-1">Meta</p><p class="text-xl font-black text-emerald-600">${meta.goal}</p></div>
                             </div>
                             <div class="p-5 bg-slate-50 rounded-3xl">
                                 <div class="flex justify-between items-end mb-3">
-                                    <h4 class="text-2xl font-black text-slate-700">${meta.remainingCals} <span class="text-xs font-bold text-slate-300 italic">kcal libres</span></h4>
+                                    <h4 class="text-2xl font-black text-slate-700">${meta.remainingCals} <span class="text-xs font-bold text-slate-300 italic">libres</span></h4>
                                     <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase ${meta.status === 'exceso' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}">${meta.status}</span>
                                 </div>
                                 <div class="w-full bg-slate-200 h-3 rounded-full overflow-hidden">
@@ -421,7 +429,7 @@
                                 </div>
                             </div>
                             <div class="mt-8 space-y-2">
-                                <p class="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Historial Hoy</p>
+                                <p class="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Historial de Hoy</p>
                                 <div class="space-y-2 max-h-40 overflow-y-auto pr-1 no-scrollbar">
                                     ${(state.stats.calorieLogs || []).map(log => `
                                         <div class="flex items-center justify-between p-3 bg-white border border-slate-50 rounded-2xl shadow-sm">
@@ -433,7 +441,7 @@
                                             </div>
                                             <p class="text-sm font-black text-slate-800">+${log.amount}</p>
                                         </div>
-                                    `).join('') || '<p class="text-center text-[10px] text-slate-300 py-4 italic">No hay registros hoy</p>'}
+                                    `).join('') || '<p class="text-center text-[10px] text-slate-300 py-4 italic">No hay registros aún</p>'}
                                 </div>
                             </div>
                         </div>
@@ -451,12 +459,27 @@
                             <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-6">
                                 <div class="bg-red-500 h-full transition-all" style="width: ${meta.burnPercent}%"></div>
                             </div>
+
                             <div class="space-y-3">
                                 <p class="text-[9px] font-black uppercase text-slate-400 tracking-widest px-1">Actividad Manual</p>
                                 <input id="ex-name" type="text" placeholder="¿Qué ejercicio?" class="w-full bg-slate-50 rounded-2xl px-4 py-3 outline-none text-sm font-medium border border-transparent focus:border-red-100 transition-all text-slate-800" />
                                 <div class="flex gap-2">
                                     <input id="ex-kcal" type="number" placeholder="kcal" class="flex-1 bg-slate-50 rounded-2xl px-4 py-3 outline-none text-sm font-medium text-slate-800" />
                                     <button onclick="registerManualExercise()" class="bg-red-500 text-white px-6 rounded-2xl font-bold active:scale-95 transition-all shadow-md shadow-red-100">OK</button>
+                                </div>
+                            </div>
+                            <div class="mt-6 space-y-2">
+                                <p class="text-[9px] font-black uppercase text-slate-400 tracking-widest px-1">Log de Ejercicios</p>
+                                <div class="space-y-2 max-h-40 overflow-y-auto pr-1">
+                                    ${(state.stats.exerciseLogs || []).map(log => `
+                                        <div class="flex items-center justify-between p-3 bg-red-50 border border-red-100 rounded-2xl">
+                                            <div class="flex items-center gap-3">
+                                                <i data-lucide="zap" class="text-red-500 w-4 h-4"></i>
+                                                <div><p class="text-xs font-bold text-slate-700">${log.label}</p><p class="text-[9px] text-slate-400 uppercase font-medium">${log.time}</p></div>
+                                            </div>
+                                            <p class="text-xs font-black text-red-600">-${log.amount} kcal</p>
+                                        </div>
+                                    `).join('') || '<p class="text-center text-[10px] text-slate-300 py-2 italic">Sin ejercicio hoy</p>'}
                                 </div>
                             </div>
                         </div>
@@ -485,7 +508,7 @@
                         <div class="bg-white rounded-[2.5rem] p-6 card-shadow border border-slate-100">
                             <div class="flex items-center gap-3 mb-6">
                                 <div class="p-3 rounded-2xl bg-orange-500 text-white shadow-lg"><i data-lucide="plus"></i></div>
-                                <div><h3 class="text-lg font-bold text-slate-800">Comida Manual</h3><p class="text-xs text-slate-400 font-medium">Registro directo</p></div>
+                                <div><h3 class="text-lg font-bold text-slate-800">Comida Manual</h3><p class="text-xs text-slate-400 font-medium">Añade calorías extra</p></div>
                             </div>
                             <div class="space-y-3">
                                 <input id="food-name" type="text" placeholder="¿Qué comiste?" class="w-full bg-slate-50 rounded-2xl px-4 py-3 outline-none text-sm font-medium border border-transparent focus:border-orange-100 text-slate-800" />
@@ -507,7 +530,7 @@
                     </div>
 
                     <div class="bg-white rounded-[2.5rem] p-8 card-shadow border border-slate-100 mt-4">
-                        <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2"><i data-lucide="info" class="w-5 h-5 text-indigo-500"></i> Resumen de Meta</h3>
+                        <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2"><i data-lucide="info" class="w-5 h-5 text-indigo-500"></i> Resumen del Plan</h3>
                         <div class="space-y-4">
                             <div class="flex justify-between items-center p-4 bg-slate-50 rounded-3xl">
                                 <p class="text-xs font-bold text-slate-500 uppercase tracking-tight">Déficit Diario Meta</p>
@@ -546,7 +569,7 @@
                         ${state.mealSuggestion ? `
                             <div class="mt-8 rounded-[3rem] overflow-hidden bg-white border border-slate-50 shadow-2xl animate-in zoom-in-95">
                                 <div class="aspect-square bg-slate-50 relative">
-                                    ${state.mealImage ? `<img src="${state.mealImage}" class="w-full h-full object-cover" />` : '<div class="h-full flex items-center justify-center text-slate-200"><i data-lucide="camera" class="w-10 h-10 animate-pulse"></i></div>'}
+                                    ${state.mealImage ? `<img src="${state.mealImage}" class="w-full h-full object-cover" />` : '<div class="h-full flex items-center justify-center text-slate-200"><i data-lucide="camera" class="w-10 h-10"></i></div>'}
                                     <div class="absolute bottom-4 left-4 right-4 bg-black/60 backdrop-blur-md p-4 rounded-2xl text-white">
                                         <h4 class="text-base font-black leading-tight">${state.mealSuggestion.nombre}</h4>
                                         <p class="text-xs text-emerald-400 font-bold">${state.mealSuggestion.calorias} kcal estimado</p>
